@@ -1,5 +1,8 @@
-#if !FAKE 
-#r "/usr/lib/mono/4.7.1-api/Facades/netstandard.dll"
+
+#load ".fake/build.fsx/intellisense.fsx"
+#if !FAKE
+#r "Facades/netstandard"
+#r "netstandard"
 #endif
 
 #r "paket:
@@ -8,8 +11,6 @@ nuget Fake.DotNet.Cli
 nuget FSharp.Core
 nuget Fake.Core.Target 
 //"
-
-#load "./.fake/build.fsx/intellisense.fsx"
 
 open System
 
