@@ -4,39 +4,25 @@ set -eu
 
 cd "$(dirname "$0")"
 
-PAKET_EXE=.paket/paket.exe
-FAKE_EXE=packages/build/FAKE/tools/FAKE.exe
+FAKE_VERSION=5.10.1
+TOOL_PATH=$(pwd)/tools
 
-FSIARGS=""
-FSIARGS2=""
-OS=${OS:-"unknown"}
-if [ "$OS" != "Windows_NT" ]
-then
-  # Can't use FSIARGS="--fsiargs -d:MONO" in zsh, so split it up
-  # (Can't use arrays since dash can't handle them)
-  FSIARGS="--fsiargs"
-  FSIARGS2="-d:MONO"
+if [ ! -e "$TOOL_PATH" ]; then
+  mkdir $TOOL_PATH
 fi
 
-run() {
-  if [ "$OS" != "Windows_NT" ]
-  then
-    mono "$@"
-  else
-    "$@"
-  fi
-}
-
-echo "Executing Paket..."
-
-FILE='paket.lock'     
-if [ -f $FILE ]; then
-   echo "paket.lock file found, restoring packages..."
-   run $PAKET_EXE restore
+## Install the FAKE tool if it's not installed already and put it in the `./tools` directory.
+TOOLS_INSTALLED=$(dotnet tool list --tool-path $TOOL_PATH)
+if echo $TOOLS_INSTALLED | grep "fake-cli" | grep -q "$FAKE_VERSION" ; then
+  echo "FAKE $FAKE_VERSION already installed."
 else
-   echo "paket.lock was not found, installing packages..."
-   run $PAKET_EXE install
+  if echo $TOOLS_INSTALLED | grep -q "fake-cli" ; then 
+    echo "Uninstalling existing FAKE cli tool"
+    sudo dotnet tool uninstall fake-cli --tool-path $TOOL_PATH
+  fi
+  echo "Installing FAKE cli tool"
+  dotnet tool install fake-cli --tool-path $TOOL_PATH --version $FAKE_VERSION
 fi
 
-run $FAKE_EXE "$@" $FSIARGS $FSIARGS2 build.fsx
+$TOOL_PATH/fake build "$@"
 

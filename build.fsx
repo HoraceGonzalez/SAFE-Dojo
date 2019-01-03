@@ -1,17 +1,30 @@
-#r @"packages/build/FAKE/tools/FakeLib.dll"
+#if !FAKE 
+#r "/usr/lib/mono/4.7.1-api/Facades/netstandard.dll"
+#endif
+
+#r "paket:
+nuget Fake.IO.FileSystem
+nuget Fake.DotNet.Cli
+nuget FSharp.Core
+nuget Fake.Core.Target 
+//"
+
+#load "./.fake/build.fsx/intellisense.fsx"
 
 open System
 
-open Fake
+open Fake.Core
+open Fake.Core.TargetOperators
+open Fake.IO
 
-let serverPath = "./src/Server" |> FullName
-let clientPath = "./src/Client" |> FullName
-let deployDir = "./deploy" |> FullName
+let serverPath = "./src/Server" |> Path.getFullName
+let clientPath = "./src/Client" |> Path.getFullName
+let deployDir = "./deploy" |> Path.getFullName
 
 let platformTool tool winTool =
-  let tool = if isUnix then tool else winTool
+  let tool = if Environment.isUnix then tool else winTool
   tool
-  |> ProcessHelper.tryFindFileOnPath
+  |> ProcessUtils.tryFindFileOnPath
   |> function Some t -> t | _ -> failwithf "%s not found" tool
 
 let nodeTool = platformTool "node" "node.exe"
@@ -29,37 +42,42 @@ type JsPackageManager =
     | YARN -> "install --frozen-lockfile"
 
 let jsPackageManager = 
-  match getBuildParam "jsPackageManager" with
+  match Environment.environVarOrDefault "jsPackageManager" "" with
   | "npm" -> NPM
   | "yarn" | _ -> YARN
 
 let mutable dotnetCli = "dotnet"
 
 let run cmd args workingDir =
-  let result =
-    ExecProcess (fun info ->
-      info.FileName <- cmd
-      info.WorkingDirectory <- workingDir
-      info.Arguments <- args) TimeSpan.MaxValue
+  let result = Shell.Exec (cmd, args, workingDir)
   if result <> 0 then failwithf "'%s %s' failed" cmd args
 
-Target "Clean" (fun _ -> 
-  CleanDirs [deployDir]
+Target.create "Clean" (fun _ -> 
+  Shell.cleanDirs [deployDir]
 )
 
-Target "InstallClient" (fun _ ->
+Target.create "InstallClient" (fun _ ->
   printfn "Node version:"
   run nodeTool "--version" __SOURCE_DIRECTORY__
   run jsPackageManager.Tool jsPackageManager.ArgsInstall  __SOURCE_DIRECTORY__
   run dotnetCli "restore" clientPath
 )
 
-Target "Run" (fun () ->
+let openInBrowser url = 
+  async {
+    do! Async.Sleep 5000
+    let pinfo = Diagnostics.ProcessStartInfo()
+    pinfo.UseShellExecute <- true
+    pinfo.FileName <- url 
+    Diagnostics.Process.Start(pinfo) |> ignore
+  }
+
+Target.create "Run" (fun _ ->
   let server = async { run dotnetCli "watch run" serverPath }
   let client = async { run dotnetCli "fable webpack-dev-server" clientPath }
   let browser = async {
-    Threading.Thread.Sleep 5000
-    Diagnostics.Process.Start "http://localhost:8080" |> ignore
+    do! Async.Sleep 5000
+    do! openInBrowser "http://localhost:8080"
   }
 
   [ server; client; browser]
@@ -72,4 +90,4 @@ Target "Run" (fun () ->
   ==> "InstallClient"
   ==> "Run"
 
-RunTargetOrDefault "Run"
+Target.runOrDefaultWithArguments "Run"
